@@ -1,6 +1,15 @@
 --- 秒杀资格判断（在 Redis 中原子执行，杜绝超卖）
---- KEYS[1] = voucherId
---- ARGV[1] = userId
+---
+--- 【参数约定 —— 曾经在这里踩过大坑】
+---   KEYS[1] = voucherId     （key 一律走 KEYS，Redis Cluster 才能正确路由到同一 slot）
+---   ARGV[1] = userId
+---   ARGV[2] = orderId
+---
+---   历史 bug：脚本曾经写的是 `local voucherId = ARGV[1]`，
+---   而调用方传的是 (userId, orderId, voucherId) —— 顺序完全错位，
+---   于是脚本拿 userId 去拼 `seckill:stock:{userId}`，永远查不到库存，
+---   秒杀接口恒返回「库存不足」，而且日志里看不出任何异常。
+---
 --- 返回值：0=有资格  1=库存不足  2=重复下单  3=不在有效期内
 ---
 --- 坑1：Redis 里不存在的 key，redis.call('get') 返回的是 false（不是 nil），
@@ -15,9 +24,10 @@ if redis.replicate_commands then
     redis.replicate_commands()
 end
 
-local voucherId = ARGV[1]
-local userId    = ARGV[2]
-local orderid   = ARGV[3]
+--- 参数绑定：voucherId 走 KEYS，其余走 ARGV
+local voucherId = KEYS[1]
+local userId    = ARGV[1]
+local orderid   = ARGV[2]
 
 local stockkey = 'seckill:stock:' .. voucherId
 local orderkey = 'seckill:order:' .. voucherId
@@ -53,10 +63,8 @@ redis.call('incrby', stockkey, -1);
 --- 4. 保存订单信息（记录该用户已下单）
 redis.call('sadd', orderkey, userId);
 
----发送信息到队列中，XADD
+--- 5. 发送消息到队列（与上面的扣减在同一脚本内，保证「扣了库存就一定有消息」）
 redis.call('xadd', 'stream.orders', '*', 'userId', userId, 'voucherId', voucherId, 'id', orderid);
 
-
-
---- 5. 成功必须有返回值！
+--- 6. 成功必须有返回值！
 return 0;
