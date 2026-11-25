@@ -1,0 +1,14 @@
+langchain>=1.5,<2
+langchain-core>=1.8
+langchain-openai>=1.8
+langchain-text-splitters>=1.2
+langchain-community>=0.4
+langgraph>=1.2
+chromadb>=1.5
+fastapi>=0.115
+uvicorn>=0.34
+httpx>=0.28
+redis>=5
+pydantic-settings>=2.6
+python-dotenv>=1.0
+pypdf>=5
