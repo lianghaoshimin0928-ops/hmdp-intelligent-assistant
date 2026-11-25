@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # 阿里百炼：https://dashscope.aliyuncs.com/compatible-mode/v1  + text-embedding-v3
     ai_embedding_api_key: str = ""
     ai_embedding_base_url: str = ""
+    # 单次 embedding 请求的最大条数。
+    # 通义 text-embedding-v3 实测上限是 10（发 25 条直接 400 batch size invalid），
+    # 所以这里默认 10，由 OpenAIEmbeddings 的 chunk_size 控制分批。
+    ai_embedding_batch_size: int = 10
 
     # ---------- 文档解析 ----------
     # auto   : 有 MinerU token 就用 MinerU 解析 PDF/Office/图片，否则回退 pypdf

@@ -115,32 +115,48 @@ def main() -> int:
     reset_bm25_cache()
     b1, b3 = evaluate("BM25 关键词检索", "bm25", None)
 
-    # ---- 模式 2：向量（哈希 embedding，仅验证代码路径）----
-    emb = HashingEmbeddings()
-    offline_dir = Path(__file__).resolve().parents[1] / "data" / "chroma_offline"
-    old_dir = settings.chroma_dir
-    settings.chroma_dir = str(offline_dir)
-    try:
-        stats = build_index(reset=True, docs_dir=docs_dir, embedding_function=emb)
-        print(f"\n  已为向量模式临时建索引：{stats['chunks']} chunk")
-        v1, v3 = evaluate("向量检索（哈希 embedding 占位）", "vector", emb)
-    finally:
-        settings.chroma_dir = old_dir
+    # ---- 模式 2：向量 ----
+    from app.rag.retriever import _embeddings_available
+
+    if _embeddings_available():
+        from app.llm import get_embeddings
+
+        label = f"向量检索（真实 embedding: {settings.ai_embedding_model}）"
+        stats = build_index(reset=True, docs_dir=docs_dir)
+        print(f"\n  已建真实向量索引：{stats['chunks']} chunk，解析方式 {stats['parsers']}")
+        v1, v3 = evaluate(label, "vector", None)
+        emb_note = "真实 embedding"
+    else:
+        emb = HashingEmbeddings()
+        offline_dir = Path(__file__).resolve().parents[1] / "data" / "chroma_offline"
+        old_dir = settings.chroma_dir
+        settings.chroma_dir = str(offline_dir)
+        try:
+            stats = build_index(reset=True, docs_dir=docs_dir, embedding_function=emb)
+            print(f"\n  未配置 embedding，用哈希占位向量建临时索引：{stats['chunks']} chunk")
+            v1, v3 = evaluate("向量检索（哈希 embedding 占位）", "vector", emb)
+        finally:
+            settings.chroma_dir = old_dir
+        emb_note = "哈希占位向量，不代表真实 embedding"
 
     # ---- 汇总 ----
     n = len(CASES)
     print(f"\n{'=' * 70}")
     print("对比结论")
     print("=" * 70)
-    print(f"  BM25 : top1 {b1}/{n}   top3 {b3}/{n}")
-    print(f"  向量 : top1 {v1}/{n}   top3 {v3}/{n}   （哈希向量，非真实 embedding）")
+    print(f"  BM25   : top1 {b1}/{n}   top3 {b3}/{n}")
+    print(f"  向量   : top1 {v1}/{n}   top3 {v3}/{n}   （{emb_note}）")
     print()
     if b3 >= n - 1:
-        print("  [PASS] BM25 通道可用，RAG 现在就能跑（不需要 embedding 服务）")
+        print("  [PASS] BM25 通道可用")
+    if v3 >= n - 1:
+        print("  [PASS] 向量通道可用")
+    if v1 > b1:
+        print(f"  向量 top1 比 BM25 高 {v1 - b1} 题 —— 语义泛化确实有效")
+    elif v1 < b1:
+        print(f"  BM25 top1 比向量高 {b1 - v1} 题 —— 专有名词密集时关键词更准")
     else:
-        print("  [WARN] BM25 命中率偏低，检查切分参数或文档内容")
-    print("  注意：向量那组用的是哈希占位向量，不代表真实 embedding 的效果；")
-    print("       真实 embedding（text-embedding-v3 / BGE）的语义泛化会明显更好。")
+        print("  两者 top1 持平 —— 正是做混合检索（RRF 融合）的理由")
     print("=" * 70)
     return 0 if b3 >= n - 1 else 1
 

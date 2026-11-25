@@ -84,8 +84,13 @@ def _llm_rerank(query: str, hits: list[Hit], top_n: int) -> list[Hit]:
 
 
 def _embeddings_available() -> bool:
-    """只有显式配了 embedding 服务才算可用 —— DeepSeek 之类没有 /embeddings 接口。"""
-    return bool(settings.ai_embedding_base_url.strip())
+    """只有配了可用的 embedding 服务才走向量 —— DeepSeek 之类没有 /embeddings 接口。"""
+    try:
+        from app.llm import embedding_available
+
+        return embedding_available()
+    except Exception:  # noqa: BLE001
+        return bool(settings.ai_embedding_base_url.strip())
 
 
 _bm25_cache: "BM25Index | None" = None

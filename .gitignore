@@ -43,3 +43,4 @@ ai-service/*.log
 logs/
 *.pid
 ai-service/data/chroma_offline/
+ai-service/data/parsed/
