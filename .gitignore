@@ -42,3 +42,4 @@ ai-service/*.log
 # ===== 运行时产物 =====
 logs/
 *.pid
+ai-service/data/chroma_offline/
