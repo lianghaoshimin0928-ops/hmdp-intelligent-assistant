@@ -77,7 +77,8 @@ class HmdpClient:
         # 2) 和 Java 共用同一个 Redis，直接读出验证码
         code = None
         try:
-            rds = redis_lib.from_url(settings.redis_url, decode_responses=True)
+            # protocol=2：Redis 5.x 不支持 RESP3（HELLO），redis-py 8 默认会试探并告警
+            rds = redis_lib.from_url(settings.redis_url, decode_responses=True, protocol=2)
             code = rds.get(f"login:code:{phone}")
         except Exception as exc:  # noqa: BLE001
             logger.warning("读取验证码失败: %s", exc)
