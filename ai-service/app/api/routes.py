@@ -166,22 +166,32 @@ def _safe(obj: Any) -> Any:
 
 # ------------------------------------------------------------------ RAG
 @router.post("/rag/index")
-def rag_index(reset: bool = True) -> dict:
+def rag_index(reset: bool = True, force_parse: bool = False) -> dict:
     from app.rag.indexer import build_index
+    from app.rag.retriever import reset_bm25_cache
 
     try:
-        return {"ok": True, "stats": build_index(reset=reset)}
+        stats = build_index(reset=reset, force_parse=force_parse)
+        reset_bm25_cache()          # 文档变了，BM25 语料也要重建
+        return {"ok": True, "stats": stats}
     except Exception as exc:  # noqa: BLE001
         logger.exception("建索引失败")
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
 
 
 @router.get("/rag/search")
-def rag_search(q: str, top_k: int = 20, top_n: int = 5, strategy: str = "keyword") -> dict:
+def rag_search(
+    q: str,
+    top_k: int = 20,
+    top_n: int = 5,
+    strategy: str = "keyword",
+    mode: str | None = None,
+) -> dict:
     from app.rag.retriever import retrieve
 
     try:
-        hits = retrieve(q, top_k=top_k, top_n=top_n, strategy=strategy)
-        return {"query": q, "count": len(hits), "hits": [h.to_dict() for h in hits]}
+        hits = retrieve(q, top_k=top_k, top_n=top_n, strategy=strategy, mode=mode)
+        return {"query": q, "mode": mode or "auto", "count": len(hits),
+                "hits": [h.to_dict() for h in hits]}
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc

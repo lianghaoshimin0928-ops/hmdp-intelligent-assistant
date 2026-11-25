@@ -236,3 +236,93 @@ LangChain 1.x 里 `AgentExecutor` 已被移除，新的方式是 `langchain.agen
 - [ ] rerank 接专用模型，用评测集量化准确率提升
 - [ ] 把 `chat/stream` 从「节点粒度」升级成「token 粒度」
 - [ ] 补 pytest 单测与 GitHub Actions CI
+
+---
+
+## 九、检索双通道（BM25 + 向量）
+
+`RAG_RETRIEVAL_MODE` 控制召回方式：
+
+| 模式 | 说明 | 依赖 |
+|---|---|---|
+| `auto`（默认） | 配了 `AI_EMBEDDING_BASE_URL` 就走向量，否则用 BM25 | 无 |
+| `bm25` | 强制 BM25 关键词检索 | **纯 Python，零依赖，可离线** |
+| `vector` | 强制向量检索 | 需要可用的 embedding 服务 |
+
+### 为什么会有 BM25 这条路
+
+DeepSeek **不提供 `/embeddings` 接口**（实测返回 HTTP 404），ModelScope 的推理接口也只有 chat 模型。
+也就是说，只有 DeepSeek 的 key 时，向量检索根本没法跑。
+
+BM25 解决这个问题：字符二元组建索引，纯本地计算，**不需要任何 embedding 服务**，
+而且对「店名、券号、编号」这类专有名词密集的查询反而比向量更准。
+
+`scripts/verify_rag.py` 会同时跑两种模式并输出命中率对比：
+
+```
+BM25 : top1 6/8   top3 8/8
+向量 : top1 6/8   top3 8/8   （哈希向量占位，非真实 embedding）
+```
+
+两个通道归一化到同一量纲后共用同一套 rerank，为后续做 RRF 融合留好了接口。
+
+### 想启用真正的向量检索
+
+去[阿里百炼](https://bailian.console.aliyun.com/)拿一个 key（有免费额度），在 `.env` 里填：
+
+```ini
+AI_EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+AI_EMBEDDING_API_KEY=sk-xxx
+AI_EMBEDDING_MODEL=text-embedding-v3
+RAG_RETRIEVAL_MODE=auto
+```
+
+---
+
+## 十、MinerU 文档解析（PDF / Office / 图片）
+
+`.md` / `.txt` 直接读；**PDF、Word、PPT、扫描图片、HTML** 走
+[MinerU 云端解析](https://mineru.net/apiManage)，输出结构化 Markdown 后再切分入库。
+
+### 配置
+
+```ini
+MINERU_TOKEN=你的token       # https://mineru.net/apiManage 申请
+MINERU_MODEL_VERSION=vlm     # pipeline 更快更便宜；vlm 对复杂版式/扫描件更好
+PARSER=auto                  # auto | mineru | pypdf
+```
+
+`PARSER=auto` 的行为：有 token 用 MinerU，没 token 对 PDF 回退 `pypdf` 抽文本（只抽文字、不保留版式），
+对 Office/图片则直接跳过。
+
+### 解析流程（对应官方 v4 接口）
+
+```
+POST /api/v4/file-urls/batch          → batch_id + file_urls
+PUT  <file_url>                       → 上传字节（这一步不带 Authorization，否则预签名校验失败）
+GET  /api/v4/extract-results/batch/{batch_id}
+                                       state: waiting-file → pending → running → converting → done
+下载 full_zip_url → 解压取 full.md
+```
+
+### 两个工程细节
+
+1. **结果按文件内容哈希缓存**到 `data/parsed/`，重复建索引不会重复消耗解析额度；
+2. **轮询有超时与失败快速退出**，单个文件失败不会卡死整个索引任务。
+
+### 自检（不消耗额度）
+
+```powershell
+.\.venv\Scripts\python.exe scripts\verify_mineru.py
+```
+
+用 `httpx.MockTransport` 模拟 MinerU 的四个接口，验证 Bearer 鉴权、请求体字段、
+上传不带鉴权头、轮询状态机、zip 解包、markdown 提取、本地缓存、以及 `parser=pypdf` 时的回退开关。
+
+### 真实解析一个 PDF
+
+```powershell
+.\.venv\Scripts\python.exe scripts\verify_mineru.py --file D:\docs\某份菜单.pdf
+```
+
+MinerU 云端解析通常 10~60 秒。解析完后把 Markdown 也放进 `data/docs/`，重建索引即可被检索到。
