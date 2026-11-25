@@ -86,7 +86,30 @@ do_seckill 节点                 ← 从断点恢复，此时才真正调用写
 
 ## 快速开始
 
-### 1. 启动依赖
+### 一键脚本（推荐）
+
+```powershell
+.\scripts\start-all.ps1     # 按依赖顺序启动：MySQL → Redis → hmdp(8081) → ai-service(8000)
+.\scripts\status.ps1        # 查看各服务端口状态
+.\scripts\stop-all.ps1      # 停止（虚拟机不会被关）
+```
+
+脚本行为：
+
+- 按依赖顺序启动，每一步**等端口真正就绪**才进入下一步（MySQL 150s、hmdp 180s、其余更短）
+- 如果虚拟机没开，自动用 `vmrun` headless 启动并等待 MySQL 端口
+- 每个服务后台运行，日志写到 `logs/<service>.out.log`，PID 记录在 `logs/<service>.pid`
+- 已启动的服务自动跳过，可重复执行
+- `stop` 会连 mvn fork 出的 java 子进程一起清理；PID 文件丢失时按端口兜底
+
+> 脚本里的路径（Redis 目录、JDK 8、Maven、虚拟机 vmx）都集中在 `scripts/dev.ps1` 顶部的
+> `$Config`，换电脑只改那一段即可。
+>
+> 如果虚拟机已经在别处开好了，可加 `-SkipVm` 跳过检测。
+
+### 手动启动
+
+#### 1. 启动依赖
 
 ```bash
 # MySQL 8 + Redis 5（Redis 需要 requirepass 123456，与 application.yaml 对齐）

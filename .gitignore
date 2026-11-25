@@ -39,3 +39,6 @@ ai-service/**/__pycache__/
 ai-service/.env
 ai-service/data/chroma/
 ai-service/*.log
+# ===== 运行时产物 =====
+logs/
+*.pid
